@@ -1,0 +1,92 @@
+version: '3'
+services:
+
+  #PHP Service
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: digitalocean.com/php
+    container_name: kiddihub
+    restart: unless-stopped
+    tty: true
+    environment:
+      SERVICE_NAME: app
+      SERVICE_TAGS: dev
+      MINIO_SERVER_ACCESS_KEY: kiddihub
+      MINIO_SERVER_SECRET_KEY: secretkey
+    working_dir: /var/www
+    volumes:
+      - ./:/var/www
+      - ./setup/php/local.ini:/usr/local/etc/php/conf.d/local.ini
+    extra_hosts:
+      - "dockerhost:10.5.0.6"
+      - "kiddihub.test.com:10.5.0.6"
+    networks:
+      vpcbr:
+
+  #Nginx Service
+  webserver:
+    image: nginx:stable-alpine
+    container_name: webserver
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./:/var/www
+      - ./setup/nginx/conf.d/:/etc/nginx/conf.d/
+    networks:
+      vpcbr:
+        ipv4_address: 10.5.0.6
+
+  #MySQL Service
+  db:
+    image: mariadb:10.5.8
+    command: --default-authentication-plugin=mysql_native_password
+    container_name: db
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: kiddihub
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_USERNAME: developer
+      MYSQL_PASSWORD: secret
+      SERVICE_TAGS: dev
+      SERVICE_NAME: mysql
+    volumes:
+      - dbdata:/var/lib/mysql
+      - ./setup/mysql/my.cnf:/etc/mysql/my.cnf
+    networks:
+      vpcbr:
+        ipv4_address: 10.5.0.4
+  s3:
+    image: minio/minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - ./storage/minio:/data
+    environment:
+      MINIO_ROOT_USER: kiddihub
+      MINIO_ROOT_PASSWORD: secretkey
+    command: server /data --console-address ":9001"
+    networks:
+      vpcbr:
+        ipv4_address: 10.5.0.9
+#Docker Networks
+networks:
+  vpcbr:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.5.0.0/16
+
+#Volumes
+volumes:
+  dbdata:
+    driver: local
